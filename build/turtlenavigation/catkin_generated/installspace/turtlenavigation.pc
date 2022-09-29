@@ -1,0 +1,8 @@
+prefix=/home/slyditewsl/robocon/7_obstaclesim/install
+
+Name: turtlenavigation
+Description: Description of turtlenavigation
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

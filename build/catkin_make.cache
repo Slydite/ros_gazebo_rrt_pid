@@ -1,0 +1,2 @@
+turtlenavigation
+-DCATKIN_DEVEL_PREFIX=/home/slyditewsl/robocon/7_obstaclesim/devel -DCMAKE_INSTALL_PREFIX=/home/slyditewsl/robocon/7_obstaclesim/install -G Unix Makefiles

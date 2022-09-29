@@ -1,0 +1,244 @@
+# !/usr/bin/env python
+
+import random
+import math
+import numpy as np
+import rospy
+from std_msgs.msg import Float64MultiArray
+
+
+class Node:
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.parent = None
+
+    def __repr__(self):
+        return "X: {}, Y: {}".format(self.x, self.y)
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class RRT:
+
+    def __init__(self, start, goal, goal_sample_rate, step_len):
+        self.start = Node(start[0], start[1])
+        self.goal = Node(goal[0], goal[1])
+        self.goal_sample_rate = goal_sample_rate
+        self.step_len = step_len
+        self.delta = 0.01
+        self.collision_radius = math.sqrt(0.14**2 + 0.18**2)
+
+        # self.clearance = 0.5
+        self.clearance = 0.25 + self.collision_radius
+        self.obs = []
+        # self.obs = [(x * 1.5, y * 1.5, 0.25)
+        #             for x in range(0, 4) for y in range(0, 4)]
+        # self.obs.pop(0)
+
+        self.goal_flag = False
+
+        self.step_len_min = 0.076
+
+        self.x_range = (0, 6)
+        self.y_range = (0, 6)
+
+        self.nodes_list = [self.start]
+
+    def path_planning(self):
+        while not self.goal_flag:
+            sample_node = self.sample_envir()
+            near_node = self.find_nearest(sample_node)
+            step_node = self.find_step(near_node, sample_node)
+            # print(near_node)
+            # print(step_node)
+            # print()
+            # print(self.is_collision(near_node, step_node))
+            if step_node and not self.is_collision(near_node, step_node):
+                self.nodes_list.append(step_node)
+                step_node.parent = near_node
+
+                if math.hypot(step_node.x - self.goal.x,
+                              step_node.y - self.goal.y) <= 0.5:
+                    self.goal_flag = True
+                    self.goal.parent = step_node
+
+        path = self.extract_path(self.nodes_list)
+        print(path)
+        return path
+
+    @staticmethod
+    def extract_path(nodes_list):
+        node_temp = nodes_list[-1]
+        path = []
+
+        while node_temp.parent:
+            path.append(node_temp)
+            node_temp = node_temp.parent
+
+        return path
+
+    def is_intersect_circle(self, o, e, d, a, r):
+        d_perp = [d[1], -d[0]]
+
+        v1 = [e[0] - a[0], e[1] - a[1]]
+        v2 = [o[0] - a[0], o[1] - a[1]]
+
+        t1 = d_perp[0] * v1[1] - d_perp[1] * v1[0]
+        t2 = d_perp[0] * v2[1] - d_perp[1] * v2[0]
+
+        if d[0] != 0:
+
+            if t1 * t2 > 0:
+                return False
+
+            else:
+                m = d[1] / d[0]
+                c = o[1] - m * o[0]
+
+                dist = (a[1] - m * a[0] - c) / math.hypot(1, m)
+
+                if dist <= self.clearance:
+                    return True
+
+        else:
+            if t1 * t2 > 0:
+                return False
+
+            else:
+                dist = (o[0] - a[0])
+
+                if math.fabs(dist) <= self.clearance:
+                    return True
+
+        return False
+
+    def is_collision(self, start, end):
+        if self.is_inside_obs(start) or self.is_inside_obs(end):
+
+            return True
+
+        o, d = self.get_ray(start, end)
+        e = [end.x, end.y]
+
+        for (x, y, r) in self.obs:
+            if self.is_intersect_circle(o, e, d, [x, y], r):
+                return True
+
+    def is_inside_obs(self, node):
+
+        for (x, y, r) in self.obs:
+            # print(self.clearance)
+            # print(node)
+            # print(x, y)
+            # print(math.hypot(node.x - x, node.y - y))
+            if math.hypot(node.x - x, node.y - y) <= self.clearance:
+                return True
+
+        return False
+
+    def sample_envir(self):
+        if np.random.random() > self.goal_sample_rate:
+            x = random.uniform(self.x_range[0] + self.delta,
+                               self.x_range[1] - self.delta)
+            y = random.uniform(self.y_range[0] + self.delta,
+                               self.y_range[1] - self.delta)
+
+            return Node(x, y)
+
+        return self.goal
+
+    def find_nearest(self, node):
+        # print(self.nodes_list)
+        distances = [
+            math.hypot(nd.x - node.x, nd.y - node.y) for nd in self.nodes_list
+        ]
+        return self.nodes_list[np.argmin(distances)]
+
+    def find_step(self, start_node, goal_node):
+        dist, theta = self.find_dist_angle(start_node, goal_node)
+        dist = min(dist, self.step_len)
+        dist = max(dist, self.step_len_min)
+        new_x = start_node.x + dist * math.cos(theta)
+        new_y = start_node.y + dist * math.sin(theta)
+
+        return Node(new_x, new_y)
+
+    @staticmethod
+    def find_dist_angle(start_node, goal_node):
+        dist = math.hypot(start_node.x - goal_node.x,
+                          start_node.y - goal_node.y)
+        theta = math.atan2(goal_node.y - start_node.y,
+                           goal_node.x - start_node.x)
+
+        return dist, theta
+
+    @staticmethod
+    def get_ray(start, end):
+        orig = [start.x, start.y]
+        direc = [end.x - start.x, end.y - start.y]
+        return orig, direc
+
+
+# rrt = RRT((0, 0), (6, 6), 0.3, 0.5)
+# print(rrt.path_planning())
+# print(len(rrt.path_planning()))
+
+
+class Planner:
+
+    def __init__(self):
+        self.sub = rospy.init_node("rrt", anonymous=True)
+        self.sub = rospy.Subscriber("/obstacle_vals", Float64MultiArray,
+                                    self.callback)
+        self.pub = rospy.Publisher("/path_vals",
+                                   Float64MultiArray,
+                                   queue_size=10)
+        self.rrt = None
+
+        self.step = 1
+
+        self.goal_sample_rate = 0.5
+
+        while not rospy.is_shutdown():
+            try:
+                self.pub.publish(self.path)
+            except:
+                pass
+
+    def callback(self, data):
+        obstacle_vals = data.data
+        self.start = Node(0, 0)
+        self.goal = Node(6, 6)
+
+        if not self.rrt:
+            self.rrt = RRT((self.start.x, self.start.y),
+                           (self.goal.x, self.start.y), self.goal_sample_rate,
+                           self.step)
+            for i in range(0, len(obstacle_vals) - 1, 2):
+                self.rrt.obs.append(
+                    (obstacle_vals[i], obstacle_vals[i + 1], 0.25))
+            path_arr = self.rrt.path_planning()
+            path_arr.append(self.start)
+            path_arr.insert(0, self.goal)
+            path_arr_temp = []
+            for i in path_arr:
+                path_arr_temp.append(i.x)
+                path_arr_temp.append(i.y)
+            self.path = Float64MultiArray()
+            self.path.data = path_arr_temp
+
+        for i in range(0, len(obstacle_vals) - 1, 2):
+            self.rrt.obs.append((obstacle_vals[i], obstacle_vals[i + 1], 0.25))
+
+
+if __name__ == "__main__":
+    try:
+        planner = Planner()
+    except rospy.ROSInterruptException:
+        pass
+
+rrt = RRT((0, 0), (6, 6), 0.5, 1)
+print(rrt.path_planning())
